@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Mis Videos</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Mis Videos">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#e62117">
+<style>
+  /* ===================================================
+     PARA AGREGAR O QUITAR VIDEOS: edita la lista VIDEOS
+     más abajo (busca "const VIDEOS").
+     =================================================== */
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: #fff7e0;
+    font-family: system-ui, sans-serif;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+    overscroll-behavior: none;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(46vw, 300px), 1fr));
+    gap: 18px;
+    padding: calc(18px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right))
+             calc(28px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));
+  }
+  .card {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    border: 0; padding: 0; margin: 0;
+    border-radius: 28px;
+    overflow: hidden;
+    cursor: pointer;
+    background: #e62117;
+    box-shadow: 0 6px 0 rgba(0,0,0,.18);
+    outline: 7px solid var(--c);
+    outline-offset: -7px;
+    transition: transform .12s;
+  }
+  .card:active { transform: scale(.95); }
+  .card img {
+    width: 100%; height: 100%;
+    object-fit: cover; display: block;
+    pointer-events: none;
+  }
+  .card .play {
+    position: absolute; right: 12px; bottom: 12px;
+    width: 54px; height: 54px; border-radius: 50%;
+    background: rgba(230,33,23,.92);
+    display: grid; place-items: center;
+    box-shadow: 0 3px 8px rgba(0,0,0,.3);
+    pointer-events: none;
+  }
+  .card .play svg { width: 26px; height: 26px; margin-left: 4px; fill: #fff; }
+
+  /* Reproductor a pantalla completa */
+  #stage {
+    position: fixed; inset: 0;
+    background: #000;
+    display: none;
+    z-index: 10;
+  }
+  #stage.on { display: block; }
+  #player, #stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  /* Capas invisibles que tapan los enlaces de YouTube para que no se salga */
+  .shield { position: absolute; z-index: 11; background: transparent; }
+  .shield.top { top: 0; left: 0; right: 0; height: calc(80px + env(safe-area-inset-top)); }
+  .shield.br  { right: 0; bottom: 0; width: 140px; height: 70px; }
+  #home {
+    position: absolute; z-index: 12;
+    top: calc(14px + env(safe-area-inset-top)); left: calc(14px + env(safe-area-inset-left));
+    width: 84px; height: 84px; border-radius: 50%;
+    border: 5px solid #fff;
+    background: #ffd65a;
+    display: grid; place-items: center;
+    box-shadow: 0 4px 14px rgba(0,0,0,.45);
+    cursor: pointer; padding: 0;
+  }
+  #home:active { transform: scale(.92); }
+  #home svg { width: 46px; height: 46px; }
+</style>
+</head>
+<body>
+
+<main class="grid" id="grid"></main>
+
+<div id="stage">
+  <div id="player"></div>
+  <div class="shield top"></div>
+  <div class="shield br"></div>
+  <button id="home" aria-label="Volver">
+    <svg viewBox="0 0 24 24"><path d="M12 3 2 11.5h3V21h5.5v-6h3v6H19v-9.5h3z" fill="#e62117"/></svg>
+  </button>
+</div>
+
+<script>
+/* =========================================================
+   LISTA DE VIDEOS
+   Para agregar uno: copia una línea y cambia el código.
+   El código es lo que va después de "youtu.be/" o "shorts/"
+   y antes del "?". Ejemplo: https://youtu.be/KafxrlgKvJo?is=...
+   → código: KafxrlgKvJo
+   ========================================================= */
+const VIDEOS = [
+  "KafxrlgKvJo",
+  "ER9sCG_9uIE",
+  "JvZkzqN91WA",
+  "MBvgexZxKsU",   // short
+  "ZE_L59AubOE",   // short
+];
+
+const COLORS = ["#ffd65a", "#5ec8f2", "#8ee07a", "#ff8fc7", "#b79cff", "#ffa94d"];
+const grid = document.getElementById("grid");
+const stage = document.getElementById("stage");
+let player = null, apiReady = false, pending = null;
+
+VIDEOS.forEach((id, i) => {
+  const b = document.createElement("button");
+  b.className = "card";
+  b.style.setProperty("--c", COLORS[i % COLORS.length]);
+  b.setAttribute("aria-label", "Video " + (i + 1));
+  const img = new Image();
+  img.alt = "";
+  img.src = "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg";
+  img.onerror = () => { img.remove(); };
+  b.appendChild(img);
+  b.insertAdjacentHTML("beforeend",
+    '<span class="play"><svg viewBox="0 0 24 24"><path d="M6 4l15 8-15 8z"/></svg></span>');
+  b.addEventListener("click", () => openVideo(id));
+  grid.appendChild(b);
+});
+
+// Cargar la API de YouTube
+const tag = document.createElement("script");
+tag.src = "https://www.youtube.com/iframe_api";
+document.head.appendChild(tag);
+window.onYouTubeIframeAPIReady = () => {
+  apiReady = true;
+  if (pending) { const id = pending; pending = null; openVideo(id); }
+};
+
+function openVideo(id) {
+  stage.classList.add("on");
+  try { history.pushState({ v: id }, ""); } catch (e) {}
+  try {
+    const el = document.documentElement;
+    (el.requestFullscreen || el.webkitRequestFullscreen || function(){}).call(el);
+  } catch (e) {}
+  if (!apiReady) { pending = id; return; }
+  if (player) {
+    player.loadVideoById(id);
+    return;
+  }
+  player = new YT.Player("player", {
+    videoId: id,
+    playerVars: {
+      autoplay: 1, playsinline: 1, rel: 0, modestbranding: 1,
+      iv_load_policy: 3, fs: 0, disablekb: 1, controls: 1
+    },
+    events: {
+      onReady: e => { try { e.target.playVideo(); } catch (err) {} },
+      // Al terminar el video, vuelve al inicio (así no ve recomendaciones)
+      onStateChange: e => { if (e.data === YT.PlayerState.ENDED) closeVideo(true); }
+    }
+  });
+}
+
+function closeVideo(fromCode) {
+  if (!stage.classList.contains("on")) return;
+  try { player && player.stopVideo(); } catch (e) {}
+  stage.classList.remove("on");
+  try {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (document.webkitFullscreenElement) document.webkitExitFullscreen();
+  } catch (e) {}
+  if (fromCode === true) { try { history.back(); } catch (e) {} }
+}
+
+document.getElementById("home").addEventListener("click", () => closeVideo(true));
+window.addEventListener("popstate", () => closeVideo(false));
+</script>
+</body>
+</html>
